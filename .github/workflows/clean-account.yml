@@ -1,0 +1,30 @@
+name: Clean Whole Account
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 0"
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete artifacts and old runs in every repo
+        env:
+          GH_TOKEN: ${{ secrets.CLEAN_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          for repo in $(gh repo list "$OWNER" --limit 200 --json nameWithOwner --jq '.[].nameWithOwner'); do
+            echo "== $repo"
+
+            gh api --paginate "repos/$repo/actions/artifacts?per_page=100" \
+              --jq '.artifacts[].id' | while read id; do
+                gh api -X DELETE "repos/$repo/actions/artifacts/$id" > /dev/null || true
+              done
+
+            gh api --paginate "repos/$repo/actions/runs?per_page=100" \
+              --jq '.workflow_runs[] | select(.status=="completed") | .id' \
+              | tail -n +6 | while read id; do
+                gh api -X DELETE "repos/$repo/actions/runs/$id" > /dev/null || true
+              done
+          done
